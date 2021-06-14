@@ -1,0 +1,7 @@
+(ns logic.sensitive-test
+  (:require [com.stuartsierra.component :as component]
+            [common-core.test-helpers :as th :refer [uuidable?]]
+            [schema.core :as s]))
+
+(def config (th/config "hihi" {:blocklist-event "/blocklist-merchants.json"
+                               :environment     "test"}))

@@ -1,0 +1,14 @@
+(ns logic.test
+  (:require [common-core.test-helpers :as th]
+            [common-datomic.test-helpers :as dth]
+            [common-test.uuid :refer [uuid]]
+            [midje.sweet :refer :all]
+            [schema.core :as s]))
+
+(s/with-fn-validation
+  (facts "charge?"
+    (l-li/charge? {}) => false
+    (l-li/charge? {:adjustment/id (th/uuid)}) => false
+    (l-li/charge? {:payment/id (th/uuid) :line-item/precise-amount 1M}) => false
+    (l-li/charge? {:charge/index 1}) => true
+    (l-li/charge? {:charge/index 1 :charge/post-date #nu/date "2016-04-02"}) => true))
