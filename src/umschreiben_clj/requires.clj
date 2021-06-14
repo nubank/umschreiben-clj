@@ -96,10 +96,9 @@
         (replace-refer-with-diff zloc require-zloc (set existing-refer) referrals-to-remove-set)
         zloc))))
 
-(defn- add-require [{:keys [refer] :as to} symbol-to-replace?]
+(defn- add-require [to]
   (fn [zloc]
     (-> zloc
-        (remove-moved-referrals refer symbol-to-replace?)
         (z/insert-right (require-map->node to))
         z/insert-newline-right)))
 
@@ -132,40 +131,84 @@
                  "assoc-some expects even number of arguments after map/vector, found odd number")))
        ret))))
 
-(defn merge-existing+to-require-maps [to-require-map existing-require]
-  (let [existing-refer (:refer existing-require)
-        new-refer      (:refer to-require-map)
-        joined-refers  (if (or (= :all existing-refer) (= :all new-refer))
-                         :all
-                         (->> (concat existing-refer new-refer)
-                              (into #{})
-                              (into [])
-                              not-empty))
-        as             (or (:as existing-require)
-                           (:as to-require-map))
-        ns*            (:namespace to-require-map)]
+(defn merge-existing+to-require-maps [to-require-map existing-require from-symbol to-symbol]
+  (let [existing-refer    (:refer existing-require)
+        new-refer         (:refer to-require-map)
+        remove-from-refer (if (= from-symbol to-symbol)
+                            identity
+                            (fn [refers] (remove #(= from-symbol %) refers)))
+        joined-refers     (if (or (= :all existing-refer) (= :all new-refer))
+                            :all
+                            (->> (concat existing-refer new-refer)
+                                 (into #{})
+                                 (into [])
+                                 remove-from-refer
+                                 not-empty))
+        as                (or (:as existing-require)
+                              (:as to-require-map))
+        ns*               (:namespace to-require-map)]
     (assoc-some {:alias     (or as ns*)
                  :namespace ns*}
                 :refer joined-refers
                 :as as)))
 
-(defn- replace-in-header [require-zloc replace-fn]
-  (let [vector-wrapped-require? (fn [zloc] (= (z/sexpr zloc)
-                                              (-> zloc z/up z/down z/sexpr)))]
-    (if (vector-wrapped-require? require-zloc)
-      (replace-fn (z/up require-zloc))
-      (replace-fn require-zloc))))
+(defn- requires-type->fn [to replace-requires-type symbol-to-replace? body-unchanged?]
+  (if (and body-unchanged?
+           (= :add replace-requires-type))
+    (update-require (:refer to) symbol-to-replace?)
+    (case replace-requires-type
+      :replace (replace-require to)
+      :merge   (replace-require to)
+      :add     (add-require to))))
 
-(defn- from-namespace? [alias refer value]
-  (and (symbol? value)
-       (or (= (str alias) (namespace value))
-           (and (coll? refer) ((set refer) value)))))
+(defn- find-require [zloc ns-require]
+  (-> zloc
+      find-ns-call
+      (find-in ['ns :require ns-require])))
 
-(defn- symbols-from-namespace [alias refer symbol-to-replace? node]
+(defn- requires-ns-matches? [sexpr require-ns]
+  (= require-ns (if (coll? sexpr) (first sexpr) sexpr)))
+
+(defn- update-requires-with-renames [requires-zloc to-refer symbol-to-replace? ns-to-replace]
+  (let [update-duplicate (fn [zloc] (if (requires-ns-matches? (z/sexpr zloc) ns-to-replace)
+                                      (remove-moved-referrals zloc to-refer symbol-to-replace?)
+                                      zloc))]
+    (loop [require-entry requires-zloc]
+      (let [updated-entry (update-duplicate require-entry)]
+        (if (z/right updated-entry)
+          (recur (z/right updated-entry))
+          (z/up updated-entry))))))
+
+(defn- transform-header [zloc ns-to-replace replace-requires-type to body-unchanged? symbol-to-replace?]
+  (let [replace-fn              (requires-type->fn to replace-requires-type symbol-to-replace? body-unchanged?)
+        require-zloc            (find-require zloc ns-to-replace)
+        vector-wrapped-require? (fn [zloc] (= (z/sexpr zloc)
+                                              (-> zloc z/up z/down z/sexpr)))
+        result                  (if (vector-wrapped-require? require-zloc)
+                                  (replace-fn (z/up require-zloc))
+                                  (replace-fn require-zloc))
+        requires-to-update      (if (= :add replace-requires-type)
+                                  result
+                                  (z/right result))] ;; skip require at current zloc, we hit it already
+    (or (update-requires-with-renames requires-to-update (:refer to) symbol-to-replace? ns-to-replace)
+        result)))
+
+(defn- from-namespaces? [requires value]
+  (let [alias-set (set (map (comp str :alias) requires))
+        refer-set (->> requires
+                       (map :refer)
+                       (filter coll?)
+                       flatten
+                       set)]
+    (and (symbol? value)
+         (or (alias-set (namespace value))
+             (refer-set value)))))
+
+(defn- symbols-from-namespace [old-requires symbol-to-replace? node]
   (if (= :reader-macro (n/tag (first node)))
     #{}
     (if-let [element (z/down node)] ;; check if it is a list jumping to the first element
-      (let [f #(and (from-namespace? alias refer %) (symbol-to-replace? %))]
+      (let [f #(and (from-namespaces? old-requires %) (symbol-to-replace? %))]
         (->> element
              (iterate z/right)
              (take-while (comp not nil?))
@@ -176,8 +219,8 @@
       #{})))
 
 (defn- replace-in-body
-  [file-zloc new-require {old-alias :alias old-refer :refer} symbol-to-replace? node->value]
-  (let [relevant-symbols (partial symbols-from-namespace old-alias old-refer symbol-to-replace?)
+  [file-zloc new-require old-requires symbol-to-replace? node->value]
+  (let [relevant-symbols (partial symbols-from-namespace old-requires symbol-to-replace?)
         replace-counter  (atom 0)
         replace+count    (fn [zloc]
                            (swap! replace-counter inc)
@@ -261,53 +304,43 @@
       (->> zloc (z/map-keys replace-usage) (z/map-vals replace-usage) z/node)
       (->> zloc (map-seq replace-usage) z/node))))
 
-(defn- transform-body [zloc new-require old-require symbol-to-replace? replace-fn]
+(defn- transform-body [zloc new-require old-requires symbol-to-replace? replace-fn]
   (if-let [body-zloc (-> zloc z/root z/edn ns-body)]
     (replace-in-body body-zloc
                      new-require
-                     old-require
+                     old-requires
                      symbol-to-replace?
                      replace-fn)
     [(z/root zloc) 0]))
 
-(defn- requires-type->fn [to replace-requires-type symbol-to-replace? body-unchanged?]
-  (if (and body-unchanged?
-           (= :add replace-requires-type))
-    (update-require (:refer to) symbol-to-replace?)
-    (case replace-requires-type
-      :replace (replace-require to)
-      :merge   (replace-require to)
-      :add     (add-require to symbol-to-replace?))))
+(defn- find-requires [zloc ns-require]
+  (let [req (-> zloc
+                find-ns-call
+                (find-in ['ns :require]))]
+    (->> req
+         (iterate z/right)
+         (take-while identity)
+         (filter #(requires-ns-matches? (z/sexpr %) ns-require))
+         (map z/sexpr))))
 
-(defn- lookup-require-map [file-zloc namespace]
-  (when-let [found-require (some-> file-zloc
-                                   find-ns-call
-                                   (find-in ['ns :require namespace]))]
-    (let [full-require (if (z.seq/vector? (z/up found-require))
-                         (z/up found-require)
-                         found-require)]
-      (-> full-require
-          z/sexpr
-          n/coerce
-          require-node->require-map))))
-
-(defn- find-require [zloc ns-require]
-  (-> zloc
-      find-ns-call
-      (find-in ['ns :require ns-require])))
+(defn- lookup-require-maps [file-zloc namespace]
+  (->> (find-requires file-zloc namespace)
+       (map n/coerce)
+       (map require-node->require-map)))
 
 (defn transform-header-and-body [file-node from-ns to replace-requires-type replace-fn symbol-to-replace?]
-  (let [file-zloc           (z/edn file-node)
-        ns-to-replace       (if (= :merge replace-requires-type)
-                              (:namespace to)
-                              from-ns)]
+  (let [file-zloc     (z/edn file-node)
+        ns-to-replace (if (= :merge replace-requires-type)
+                        (:namespace to)
+                        from-ns)]
     (when (find-require file-zloc ns-to-replace)
-      (let [old-require         (lookup-require-map file-zloc from-ns)
+      (let [old-requires        (lookup-require-maps file-zloc from-ns)
             [transformed-body
-             replace-count]     (transform-body file-zloc to old-require symbol-to-replace? replace-fn)
-            replace-requires-fn (requires-type->fn to replace-requires-type symbol-to-replace? (zero? replace-count))]
-        (let [require-zloc (find-require (z/edn transformed-body) ns-to-replace)]
-          (z/root (replace-in-header require-zloc replace-requires-fn)))))))
+             replace-count]     (transform-body file-zloc to old-requires symbol-to-replace? replace-fn)]
+        (-> transformed-body
+            z/edn
+            (transform-header ns-to-replace replace-requires-type to (zero? replace-count) symbol-to-replace?)
+            z/root)))))
 
 (defn replace
   "Replaces the require of namespace <from> with <to> and also replaces all
