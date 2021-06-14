@@ -65,6 +65,18 @@
                                            'clojure.string/lower-case
                                            'upper-case
                                            '[other.namespace :as new-other])))))
+
+  (testing "adding an `:as` when the body is unchanged shouldn't remove existing `:refer`"
+    (is (match? (build-code ['[clojure.string :as str]
+                             '[other.namespace :as new-other :refer [lower-case]]]
+                            '(lower-case (str/upper-case "prueba")))
+                (n/sexpr (variables/rename (build-node ['[clojure.string :as str]
+                                                        '[other.namespace :as new-other :refer [lower-case]]]
+                                                       '(lower-case (str/upper-case "prueba")))
+                                           'clojure.string/whatever
+                                           'whatever
+                                           '[other.namespace :as new-other])))))
+
   (testing "refer takes precedence over alias"
     (is (match? (build-code ['[clojure.string :as str]
                              '[other.namespace :as new-other :refer [upper-case]]]

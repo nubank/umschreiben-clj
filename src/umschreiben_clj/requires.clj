@@ -272,7 +272,7 @@
 
 (defn- requires-type->fn [to replace-requires-type symbol-to-replace? body-unchanged?]
   (if (and body-unchanged?
-           (not (= :replace replace-requires-type)))
+           (= :add replace-requires-type))
     (update-require (:refer to) symbol-to-replace?)
     (case replace-requires-type
       :replace (replace-require to)
