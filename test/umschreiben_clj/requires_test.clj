@@ -5,33 +5,9 @@
             [matcher-combinators.test :refer [match?]]
             [rewrite-clj.node :as n]
             [rewrite-clj.parser :as p]
-            [umschreiben-clj.requires :as requires]))
-
-(defn code->node [& forms]
-  (p/parse-string-all (apply str forms)))
-
-(defn- strictly [expected]
-  (m/match-with [map? m/equals] expected))
-
-(deftest use-require-test
-  (are [require symbol result]
-       (match? (strictly result) (requires/use-require (#'requires/require-node->require-map (code->node require)) symbol))
-
-    '[a.b.c]                         'myfn  'a.b.c/myfn
-    'a.b.c                           'myfn  'a.b.c/myfn
-    '[a.b.c :as c]                   'myfn  'c/myfn
-    '[a.b.c :refer [myfn]]           'myfn  'myfn
-    '[a.b.c :as c :refer [myfn]]     'myfn  'myfn
-    '[a.b.c :as c :refer [otherfn]]  'myfn  'c/myfn
-
-    '[a.b.c]                         'ns/myfn  'a.b.c/myfn
-    'a.b.c                           'ns/myfn  'a.b.c/myfn
-    '[a.b.c :as c]                   'ns/myfn  'c/myfn
-    '[a.b.c :refer [myfn]]           'ns/myfn  'myfn
-    '[a.b.c :as c :refer [myfn]]     'ns/myfn  'myfn
-    '[a.b.c :as c :refer [otherfn]]  'ns/myfn  'c/myfn
-
-    '[a.b.c :as c]  'a.b.c/myfn  'c/myfn))
+            [umschreiben-clj.internals.requires :as internals.requires]
+            [umschreiben-clj.requires :as requires]
+            [umschreiben-clj.test-utils :refer [code->node strictly]]))
 
 (deftest replace-using-require-test
   (are [code symbol result]
@@ -40,7 +16,7 @@
                 (requires/replace-using-require
                  identity
                  (code->node code)
-                 (#'requires/require-node->require-map (code->node '[a.b.c :as c]))
+                 (internals.requires/require-node->require-map (code->node '[a.b.c :as c]))
                  symbol)))
 
     '(myfn 1 2)          #{'myfn}  '(c/myfn 1 2)

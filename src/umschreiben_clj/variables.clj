@@ -1,6 +1,7 @@
 (ns umschreiben-clj.variables
   (:require [rewrite-clj.node :as n]
             [rewrite-clj.zip :as z]
+            [umschreiben-clj.internals.requires :as internals.requires]
             [umschreiben-clj.requires :as requires]))
 
 (defn rename
@@ -30,20 +31,20 @@
         from-symbol      (-> from name symbol)
         to-require-map   (-> to-require
                              n/coerce
-                             requires/require-node->require-map)
+                             internals.requires/require-node->require-map)
         existing-require (-> file-node
                              z/edn
-                             (#'requires/lookup-require-maps (:namespace to-require-map))
+                             (internals.requires/lookup-require-maps (:namespace to-require-map))
                              first)
         transform-symbol #(get {from-symbol to-symbol} (-> % name symbol))
-        to-require       (requires/merge-existing+to-require-maps
+        to-require       (internals.requires/merge-existing+to-require-maps
                           to-require-map existing-require from-symbol to-symbol)
         update-type      (if (:namespace existing-require)
                            :merge
                            :add)]
-    (requires/transform-header-and-body file-node
-                                        from-ns
-                                        to-require
-                                        update-type
-                                        (partial requires/replace-using-require transform-symbol)
-                                        transform-symbol)))
+    (internals.requires/transform-header-and-body file-node
+                                                  from-ns
+                                                  to-require
+                                                  update-type
+                                                  (partial requires/replace-using-require transform-symbol)
+                                                  transform-symbol)))
