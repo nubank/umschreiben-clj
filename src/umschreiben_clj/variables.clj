@@ -33,9 +33,11 @@
                              requires/require-node->require-map)
         existing-require (-> file-node
                              z/edn
-                             (#'requires/lookup-require-map (:namespace to-require-map)))
+                             (#'requires/lookup-require-maps (:namespace to-require-map))
+                             first)
         transform-symbol #(get {from-symbol to-symbol} (-> % name symbol))
-        to-require       (requires/merge-existing+to-require-maps to-require-map existing-require)
+        to-require       (requires/merge-existing+to-require-maps
+                          to-require-map existing-require from-symbol to-symbol)
         update-type      (if (:namespace existing-require)
                            :merge
                            :add)]

@@ -258,6 +258,55 @@
                                                     'lower-case
                                                     '[other.namespace :refer [lower-case]]))))))
 
+(deftest handling-duplicate-require
+  (testing "when updating a require and it is already present multiple times"
+    (is (match? (build-code ['[clojure.string :as str]
+                             '[clojure.string :as string]
+                             'clojure.string]
+                            '(do (str/lower-case "a")
+                                 (str/lower-case "c")
+                                 (str/lower-case "d")))
+                (n/sexpr (variables/rename (build-node ['[clojure.string :as str :refer [upper-case]]
+                                                        '[clojure.string :as string :refer [upper-case]]
+                                                        '[clojure.string :refer [upper-case]]]
+                                                       '(do (string/upper-case "a")
+                                                            (upper-case "c")
+                                                            (str/upper-case "d")))
+                                           'clojure.string/upper-case
+                                           'lower-case
+                                           '[clojure.string :as string])))))
+
+  (testing "renames that don't alter the name/ns work in presence of multiple duplicate imports"
+    (is (match? (build-code ['[clojure.string :as str :refer [upper-case]]
+                             'clojure.string]
+                            '(do (upper-case "c")
+                                 (upper-case "d")))
+                (n/sexpr (variables/rename (build-node ['[clojure.string :as str :refer [upper-case]]
+                                                        '[clojure.string :refer [upper-case]]]
+                                                       '(do (upper-case "c")
+                                                            (str/upper-case "d")))
+                                           'clojure.string/upper-case
+                                           'upper-case
+                                           '[clojure.string :refer [upper-case]])))))
+
+  (testing "when adding a require and old require present thrice"
+    (is (match? (build-code ['[clojure.string :as str]
+                             '[other.namespace :as other]
+                             '[clojure.string :as string]
+                             '[clojure.string :refer [lower-case]]]
+                            '(do (other/another-case "a")
+                                 (other/another-case "c")
+                                 (other/another-case "d")))
+                (n/sexpr (variables/rename (build-node ['[clojure.string :as str :refer [upper-case]]
+                                                        '[clojure.string :as string :refer [upper-case]]
+                                                        '[clojure.string :refer [lower-case upper-case]]]
+                                                       '(do (string/upper-case "a")
+                                                            (upper-case "c")
+                                                            (str/upper-case "d")))
+                                           'clojure.string/upper-case
+                                           'another-case
+                                           '[other.namespace :as other]))))))
+
 (deftest whole-file-test
   (let [nodes    (p/parse-string-all (slurp "./resources/test/variables/before_rename.clj.fixture"))
         expected (slurp "./resources/test/variables/after_rename.clj.fixture")
