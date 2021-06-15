@@ -21,6 +21,7 @@
                  [rewrite-clj "1.0.605-alpha"]]
 
   :profiles {:dev {:source-paths ["config"]
+                   :plugins      [[lein-project-version "0.1.0"]]
                    :dependencies [[org.clojure/tools.namespace "1.0.0"]
                                   [nubank/matcher-combinators "3.1.4"]]}}
 
