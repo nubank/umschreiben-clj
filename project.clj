@@ -1,4 +1,4 @@
-(defproject dev.nubank/umschreiben-cl "0.1.0"
+(defproject dev.nubank/umschreiben-clj "0.1.0"
   :description "Rewrite utilities for refactoring clojure files"
 
   :url "https://github.com/nubank/umschreiben-clj"
