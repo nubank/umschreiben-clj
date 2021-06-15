@@ -4,10 +4,8 @@
             [rewrite-clj.node :as n]
             [rewrite-clj.parser :as p]
             [rewrite-clj.zip :as z]
+            [umschreiben-clj.test-utils :refer [code->node]]
             [umschreiben-clj.variables :as variables]))
-
-(defn code->node [& forms]
-  (p/parse-string-all (apply str forms)))
 
 (defn- build-code [requires body]
   [`(~'ns hello.world (:require ~@requires))
