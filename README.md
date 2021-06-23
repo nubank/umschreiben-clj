@@ -7,6 +7,13 @@ Mostly a collection of useful extensions written on top of [`rewrite-clj`](https
 This is an experimental alpha-stage library that is sure to have many bugs and coverage issues.
 Please be patient and feel free to contribute issues and fixes.
 
+_current version:_
+
+[![Current Version](https://img.shields.io/clojars/v/dev.nubank/umschreiben-clj.svg)](https://clojars.org/dev.nubank/umschreiben-clj)
+
+_docs:_
+[Found on cljdoc](https://cljdoc.xyz/d/dev.nubank/umschreiben-clj/)
+
 ## functionality
 
 ### managing requires of a namespace
